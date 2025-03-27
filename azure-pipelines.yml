@@ -1,0 +1,145 @@
+trigger: none
+
+variables:
+  azureSubscription: 'Azure_Terraform'  # Name of the Azure service connection
+  storageAccountName: 'storage1varun'   # Your actual storage account name
+  resourceGroupName: 'myrg'   # Name of the resource group
+  containerName: 'terraform'                        # Your blob container name
+  azure_storage_key: 'mypipeline.terraform'
+  terraformVersion: 'latest'                      # Or specify a version
+  terraformWorkingDirectory: '.'  # Terraform root directory
+
+stages:
+- stage: dev
+  displayName: 'Deploy Infrastructure'
+  jobs:
+  - deployment: Deploy
+    displayName: 'Deploy to Dev'
+    environment: 
+      name: 'dev'  # Use environment parameter
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+            displayName: "Checkout Repository"
+            
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: 'latest'
+          
+          - script: |
+             echo "Checking current directory..."
+             pwd
+             echo "Listing files in current directory..."
+             ls -la
+            displayName: "Debug File Structure"
+          
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Init - Dev"
+            inputs:
+              targetType: "inline"
+              script: |
+                cd $(workingDirectory)
+                terraform init -backend-config=backend-dev.tfvars"
+              provider: 'azurerm'
+              backendServiceArm: $(azureSubscription)
+              backendAzureRmResourceGroupName: 'myrg'
+              backendAzureRmStorageAccountName: 'storage1varun'
+              backendAzureRmContainerName: 'terraform'
+              backendAzureRmKey: 'dev.terraform'
+              workingDirectory: $(terraformWorkingDirectory)
+
+          - script: |
+              terraform workspace select dev || terraform workspace new dev
+            workingDirectory: $(terraformWorkingDirectory)
+            displayName: 'Select Workspace'
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Plan - Dev"
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              commandOptions: '-var-file=dev.tfvars'
+              environmentServiceNameAzureRM: $(azureSubscription)
+              workingDirectory: $(terraformWorkingDirectory)
+            
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Apply - Dev"
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              commandOptions: '-var-file=dev.tfvars'
+              environmentServiceNameAzureRM: $(azureSubscription)
+              workingDirectory: $(terraformWorkingDirectory)
+
+- stage: Prod
+  displayName: "Prod Infrastructure"
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: Deploy
+    displayName: 'Deploy to Prod'
+    environment: 
+      name: 'prod'  # Use environment parameter
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+            displayName: "Checkout Repository"
+            
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: 'latest'
+          
+          - script: |
+             echo "Checking current directory..."
+             pwd
+             echo "Listing files in current directory..."
+             ls -la
+            displayName: "Debug File Structure"
+          
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Init - Prod"
+            inputs:
+              targetType: "inline"
+              script: |
+                cd $(workingDirectory)
+                terraform init -backend-config=backend-prod.tfvars"
+              provider: 'azurerm'
+              backendServiceArm: $(azureSubscription)
+              backendAzureRmResourceGroupName: 'myrg'
+              backendAzureRmStorageAccountName: 'storage1varun'
+              backendAzureRmContainerName: 'terraform'
+              backendAzureRmKey: 'prod.terraform'
+              workingDirectory: $(terraformWorkingDirectory)
+
+          - script: |
+              terraform workspace select dev || terraform workspace new dev
+            workingDirectory: $(terraformWorkingDirectory)
+            displayName: 'Select Workspace'
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Plan - prod"
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              commandOptions: '-var-file=prod.tfvars'
+              environmentServiceNameAzureRM: $(azureSubscription)
+              workingDirectory: $(terraformWorkingDirectory)
+            
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Apply - prod"
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              commandOptions: '-var-file=prod.tfvars'
+              environmentServiceNameAzureRM: $(azureSubscription)
+              workingDirectory: $(terraformWorkingDirectory)
+  
